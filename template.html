@@ -1,0 +1,114 @@
+<!DOCTYPE>
+<html>
+<head>
+    <title>Ping</title>
+</head>
+<script language="javascript" type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1/jquery.min.js"></script>
+<script language="javascript" type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jqueryui/1/jquery-ui.min.js"></script>
+<script language="javascript" type="text/javascript" src="http://www.flotcharts.org/flot/jquery.flot.js"></script>
+<script language="javascript" type="text/javascript" src="http://www.flotcharts.org/flot/jquery.flot.time.js"></script><script language="javascript" type="text/javascript" src="http://www.flotcharts.org/flot/jquery.flot.axislabels.js"></script>
+<script language="javascript" type="text/javascript">
+    var wsUri = "ws://%s/ping/";
+    var output;
+    var pingCount = 0;
+    var pingInterval = 100;
+    var maxPings = 100;
+    var rtt_data = [];
+    var ul_delta_data = [];
+    var dl_delta_data = [];
+    var ul_del_first = 0;
+    var dl_del_first = 0;
+
+    $(function () {
+        init();
+    });
+
+    function init() {
+        output = document.getElementById("output");
+        websocket = new WebSocket(wsUri);
+        websocket.onopen = function (evt) {
+            onOpen(evt)
+        };
+        websocket.onclose = function (evt) {
+            onClose(evt)
+        };
+        websocket.onmessage = function (evt) {
+            onMessage(evt)
+        };
+        websocket.onerror = function (evt) {
+            onError(evt)
+        };
+    }
+
+    function onOpen(evt) {
+        writeToScreen("CONNECTED");
+        sendPing();
+    }
+
+    function sendPing() {
+        msg = { 'text': 'WebSocket rocks', 'client_tx': new Date().getTime(), 'seq': pingCount };
+        doSend(JSON.stringify(msg));
+        pingCount = pingCount + 1;
+        if (pingCount < maxPings) {
+            setTimeout(sendPing, pingInterval);
+        }
+        else {
+            websocket.close();
+        }
+    }
+
+    function onClose(evt) {
+        writeToScreen("DISCONNECTED");
+    }
+
+    function onMessage(evt) {
+        var msg = JSON.parse(evt.data);
+        client_rx = new Date().getTime();
+        var rtt = client_rx - msg.client_tx
+
+        rtt_data.push([msg.seq, rtt]);
+        $.plot($("#rttchart"), [{data:rtt_data, label:'RTT'}]);
+
+        var ul_del = msg.server_tx - msg.client_tx
+        var dl_del = client_rx - msg.server_tx
+
+        if (ul_delta_data.length == 0) {
+            ul_delta_data.push([msg.seq, 0]);
+            dl_delta_data.push([msg.seq, 0]);
+            ul_del_first = ul_del;
+            dl_del_first = dl_del;
+        }
+        else {
+            ul_delta_data.push([msg.seq, ul_del - ul_del_first]);
+            dl_delta_data.push([msg.seq, dl_del - dl_del_first]);
+        }
+
+        $.plot($("#deltachart"), [
+            { data: ul_delta_data, label:'Up' },
+            { data: dl_delta_data, label:'Down' }
+            ]);
+
+    }
+
+    function onError(evt) {
+        writeToScreen('<span style="color: red;">ERROR:</span> ' + evt.data);
+    }
+
+    function doSend(message) {
+        websocket.send(message);
+    }
+
+    function writeToScreen(message) {
+        var pre = document.createElement("p");
+        pre.style.wordWrap = "break-word";
+        pre.innerHTML = message;
+        output.appendChild(pre);
+    }
+</script>
+<body>
+<h2>WebSocket Test</h2>
+<div id="rttchart" style="width:600px;height:300px;"></div>
+<div id="deltachart" style="width:600px;height:300px;"></div>
+<div id="output"></div>
+</body>
+</html>
